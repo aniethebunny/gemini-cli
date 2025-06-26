@@ -28,75 +28,83 @@ runs:
       id: prep_coverage_comment
       shell: bash
       run: |
+        set -euo pipefail
+
         cli_json_file="${{ inputs.cli_json_file }}"
         core_json_file="${{ inputs.core_json_file }}"
         cli_full_text_summary_file="${{ inputs.cli_full_text_summary_file }}"
         core_full_text_summary_file="${{ inputs.core_full_text_summary_file }}"
         comment_file="coverage-comment.md"
 
-        # Extract percentages using jq for the main table
-        if [ -f "$cli_json_file" ]; then
-          cli_lines_pct=$(jq -r '.total.lines.pct' "$cli_json_file")
-          cli_statements_pct=$(jq -r '.total.statements.pct' "$cli_json_file")
-          cli_functions_pct=$(jq -r '.total.functions.pct' "$cli_json_file")
-          cli_branches_pct=$(jq -r '.total.branches.pct' "$cli_json_file")
-        else
-          cli_lines_pct="N/A"; cli_statements_pct="N/A"; cli_functions_pct="N/A"; cli_branches_pct="N/A"
-          echo "CLI coverage-summary.json not found at: $cli_json_file" >&2 # Error to stderr
+        format_pct() {
+          if [ "$1" = "N/A" ]; then echo "N/A"; else echo "$1%"; fi
+        }
+
+        # Ensure required JSON files exist
+        if [ ! -f "$cli_json_file" ]; then
+          echo "Error: CLI coverage summary not found at $cli_json_file" >&2
+          exit 1
+        fi
+        if [ ! -f "$core_json_file" ]; then
+          echo "Error: Core coverage summary not found at $core_json_file" >&2
+          exit 1
         fi
 
-        if [ -f "$core_json_file" ]; then
-          core_lines_pct=$(jq -r '.total.lines.pct' "$core_json_file")
-          core_statements_pct=$(jq -r '.total.statements.pct' "$core_json_file")
-          core_functions_pct=$(jq -r '.total.functions.pct' "$core_json_file")
-          core_branches_pct=$(jq -r '.total.branches.pct' "$core_json_file")
-        else
-          core_lines_pct="N/A"; core_statements_pct="N/A"; core_functions_pct="N/A"; core_branches_pct="N/A"
-          echo "Core coverage-summary.json not found at: $core_json_file" >&2 # Error to stderr
-        fi
+        # Extract CLI coverage metrics
+        cli_lines_pct=$(jq -r '.total.lines.pct' "$cli_json_file")
+        cli_statements_pct=$(jq -r '.total.statements.pct' "$cli_json_file")
+        cli_functions_pct=$(jq -r '.total.functions.pct' "$cli_json_file")
+        cli_branches_pct=$(jq -r '.total.branches.pct' "$cli_json_file")
 
-        echo "## Code Coverage Summary" > "$comment_file"
-        echo "" >> "$comment_file"
-        echo "| Package | Lines | Statements | Functions | Branches |" >> "$comment_file"
-        echo "|---|---|---|---|---|" >> "$comment_file"
-        echo "| CLI | ${cli_lines_pct}% | ${cli_statements_pct}% | ${cli_functions_pct}% | ${cli_branches_pct}% |" >> "$comment_file"
-        echo "| Core | ${core_lines_pct}% | ${core_statements_pct}% | ${core_functions_pct}% | ${core_branches_pct}% |" >> "$comment_file"
-        echo "" >> "$comment_file"
+        # Extract Core coverage metrics
+        core_lines_pct=$(jq -r '.total.lines.pct' "$core_json_file")
+        core_statements_pct=$(jq -r '.total.statements.pct' "$core_json_file")
+        core_functions_pct=$(jq -r '.total.functions.pct' "$core_json_file")
+        core_branches_pct=$(jq -r '.total.branches.pct' "$core_json_file")
 
-        # CLI Package - Collapsible Section (with full text summary from file)
-        echo "<details>" >> "$comment_file"
-        echo "<summary>CLI Package - Full Text Report</summary>" >> "$comment_file"
-        echo "" >> "$comment_file"
-        echo '```text' >> "$comment_file"
-        if [ -f "$cli_full_text_summary_file" ]; then
-          cat "$cli_full_text_summary_file" >> "$comment_file"
-        else
-          echo "CLI full-text-summary.txt not found at: $cli_full_text_summary_file" >> "$comment_file"
-        fi
-        echo '```' >> "$comment_file"
-        echo "</details>" >> "$comment_file"
-        echo "" >> "$comment_file"
+        # Build markdown coverage comment
+        {
+          echo "## Code Coverage Summary"
+          echo ""
+          echo "| Package | Lines | Statements | Functions | Branches |"
+          echo "|---------|-------|------------|-----------|----------|"
+          echo "| CLI  | $(format_pct "$cli_lines_pct") | $(format_pct "$cli_statements_pct") | $(format_pct "$cli_functions_pct") | $(format_pct "$cli_branches_pct") |"
+          echo "| Core | $(format_pct "$core_lines_pct") | $(format_pct "$core_statements_pct") | $(format_pct "$core_functions_pct") | $(format_pct "$core_branches_pct") |"
+          echo ""
 
-        # Core Package - Collapsible Section (with full text summary from file)
-        echo "<details>" >> "$comment_file"
-        echo "<summary>Core Package - Full Text Report</summary>" >> "$comment_file"
-        echo "" >> "$comment_file"
-        echo '```text' >> "$comment_file"
-        if [ -f "$core_full_text_summary_file" ]; then
-          cat "$core_full_text_summary_file" >> "$comment_file"
-        else
-          echo "Core full-text-summary.txt not found at: $core_full_text_summary_file" >> "$comment_file"
-        fi
-        echo '```' >> "$comment_file"
-        echo "</details>" >> "$comment_file"
-        echo "" >> "$comment_file"
+          echo "<details>"
+          echo "<summary>CLI Package - Full Text Report</summary>"
+          echo ""
+          echo '```text'
+          if [ -f "$cli_full_text_summary_file" ]; then
+            cat "$cli_full_text_summary_file"
+          else
+            echo "CLI full-text-summary.txt not found at: $cli_full_text_summary_file"
+          fi
+          echo '```'
+          echo "</details>"
+          echo ""
 
-        echo "_For detailed HTML reports, please see the 'coverage-reports-${{ inputs.node_version }}' artifact from the main CI run._" >> "$comment_file"
+          echo "<details>"
+          echo "<summary>Core Package - Full Text Report</summary>"
+          echo ""
+          echo '```text'
+          if [ -f "$core_full_text_summary_file" ]; then
+            cat "$core_full_text_summary_file"
+          else
+            echo "Core full-text-summary.txt not found at: $core_full_text_summary_file"
+          fi
+          echo '```'
+          echo "</details>"
+          echo ""
+
+          echo "_For detailed HTML reports, see the 'coverage-reports-${{ inputs.node_version }}' artifact from the main CI run._"
+        } > "$comment_file"
 
     - name: Post Coverage Comment
       uses: thollander/actions-comment-pull-request@v3
       if: always()
       with:
-        file-path: coverage-comment.md # Use the generated file directly
+        file-path: coverage-comment.md
         comment-tag: code-coverage-summary
         github-token: ${{ inputs.github_token }}
